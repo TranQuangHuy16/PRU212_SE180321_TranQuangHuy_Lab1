@@ -30,79 +30,57 @@ public class PlayerController : MonoBehaviour
 
     void Update()
     {
-        // Kiểm tra xem robot có bị kẹt không
-        if (Time.time - lastCollisionTime < stuckThreshold && rb.linearVelocity.magnitude < 0.1f)
-        {
-            isStuck = true;
-        }
-        else
-        {
-            isStuck = false;
-        }
-
-        // Nếu bị kẹt, thử thoát ra
+        // Nếu bị kẹt, xử lý thoát kẹt
         if (isStuck && Time.time - lastEscapeTime > stuckCooldown)
         {
             EscapeStuckSituation();
             lastEscapeTime = Time.time;
         }
 
-        // Xử lý trạng thái dừng và xoay sau va chạm
+        // Nếu đang dừng
         if (isStopped)
         {
-            // Dừng robot
             rb.linearVelocity = Vector2.zero;
 
-            // Tính thời gian dừng
             if (Time.time - stopStartTime >= stopDuration)
             {
-                isStopped = false; // Kết thúc thời gian dừng
+                isStopped = false;
             }
             else
             {
-                // Xoay body từ từ về hướng đi mới
-                if (direction != Vector2.zero)
-                {
-                    float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg;
-                    targetRotation = Quaternion.Euler(0f, 0f, angle);
-                    transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime * rotationSpeed);
-                }
+                RotateSmoothly();
+                return;
             }
         }
-        else
-        {
-            // Di chuyển robot khi không dừng
-            rb.linearVelocity = direction * speed;
 
-            // Xoay robot theo hướng di chuyển khi không va chạm
-            if (direction != Vector2.zero)
-            {
-                float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg;
-                transform.rotation = Quaternion.Euler(0f, 0f, angle);
-            }
+        // Nếu sắp va chạm, chuyển hướng thông minh
+        if (IsObstacleAhead(direction))
+        {
+            direction = FindEscapeDirection();
         }
+
+        // Di chuyển bình thường
+        rb.linearVelocity = direction * speed;
+        RotateSmoothly();
     }
 
     void OnCollisionEnter2D(Collision2D collision)
     {
         lastCollisionTime = Time.time;
 
-        // Phản xạ hướng dựa trên pháp tuyến va chạm
         Vector2 normal = collision.contacts[0].normal;
         direction = Vector2.Reflect(direction, normal).normalized;
 
-        // Kiểm tra xem hướng mới có khả thi không
-        RaycastHit2D hit = Physics2D.Raycast(transform.position, direction, raycastDistance);
-        if (hit.collider != null)
+        if (IsObstacleAhead(direction))
         {
-            // Nếu hướng phản xạ không khả thi, tìm hướng thoát
             direction = FindEscapeDirection();
         }
 
-        // Bắt đầu trạng thái dừng sau va chạm
         isStopped = true;
         stopStartTime = Time.time;
     }
+
+
 
     private void EscapeStuckSituation()
     {
@@ -124,26 +102,32 @@ public class PlayerController : MonoBehaviour
         }
     }
 
+
+
     private Vector2 FindEscapeDirection()
     {
-        // Quét 8 hướng xung quanh robot (0, 45, 90, 135, 180, 225, 270, 315 độ)
         float bestDistance = 0f;
-        Vector2 bestDirection = direction;
+        Vector2 bestDir = direction;
 
-        for (int i = 0; i < 8; i++)
+        // Quét 36 hướng (mỗi 10 độ)
+        for (int i = 0; i < 36; i++)
         {
-            float angle = i * 45f * Mathf.Deg2Rad;
-            Vector2 testDirection = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)).normalized;
-            RaycastHit2D hit = Physics2D.Raycast(transform.position, testDirection, raycastDistance);
+            float angle = i * 10f * Mathf.Deg2Rad;
+            Vector2 dir = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)).normalized;
+            RaycastHit2D hit = Physics2D.Raycast(transform.position, dir, raycastDistance);
 
-            if (hit.collider == null || hit.distance > bestDistance)
+            if (hit.collider == null)
+            {
+                return dir; // Hướng an toàn hoàn toàn
+            }
+            else if (hit.distance > bestDistance)
             {
                 bestDistance = hit.distance;
-                bestDirection = testDirection;
+                bestDir = dir;
             }
         }
 
-        return bestDirection;
+        return bestDir;
     }
 
     private System.Collections.IEnumerator ReEnableCollision(Collider2D collider, float delay)
@@ -154,4 +138,21 @@ public class PlayerController : MonoBehaviour
             Physics2D.IgnoreCollision(robotCollider, collider, false);
         }
     }
+
+    private bool IsObstacleAhead(Vector2 dir)
+    {
+        RaycastHit2D hit = Physics2D.Raycast(transform.position, dir, raycastDistance);
+        return hit.collider != null;
+    }
+
+    private void RotateSmoothly()
+    {
+        if (direction != Vector2.zero)
+        {
+            float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg;
+            targetRotation = Quaternion.Euler(0f, 0f, angle);
+            transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime * rotationSpeed);
+        }
+    }
+
 }
